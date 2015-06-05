@@ -1,0 +1,10 @@
+- name: setup alias for ease
+  lineinfile: dest=/home/vagrant/.bash_profile
+              line="alias h=hadoop"
+
+- name: maven | make sure repo being added
+  copy: src=files/epel-apache-maven.repo
+        dest=/etc/yum.repos.d/epel-apache-maven.repo
+
+- name: maven | install
+  yum: name=apache-maven state=present

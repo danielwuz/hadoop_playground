@@ -1,0 +1,80 @@
+---
+- hosts: all
+  sudo: yes
+  vars:
+    mapreduce_user: vagrant
+
+  tasks:
+    - name: add iptables rules
+      command: /sbin/chkconfig iptables off
+
+    - name: ensure iptables stopped
+      service: name=iptables state=stopped
+
+    - name: ensure oracle jdk being copied
+      copy: src=files/jdk-8u31-linux-x64.rpm
+            dest=/tmp/jdk.rpm
+
+    - name: install JDK
+      yum: name=/tmp/jdk.rpm state=present
+
+    - name: ensure cdh repo being copied
+      copy: src=files/cloudera-cdh5.repo
+            dest=/etc/yum.repos.d/cloudera-cdh5.repo
+            owner=root group=root mode=0644
+
+    - name: import rpm key
+      rpm_key: key=http://archive.cloudera.com/cdh5/redhat/6/x86_64/cdh/RPM-GPG-KEY-cloudera state=present
+
+    - name: install hadoop in pseudo mode
+      yum: name=hadoop-conf-pseudo state=latest
+
+    - name: check if namenode exists
+      stat: path=/var/lib/hadoop-hdfs/cache/hdfs/dfs/name/current/VERSION
+      register: namenode_version
+
+    - name: format namenode
+      sudo_user: hdfs
+      command: hdfs namenode -format
+      when: not namenode_version.stat.exists
+
+    - name: namenode | ensure datanode started
+      service: name=hadoop-hdfs-datanode state=started
+
+    - name: namenode | ensure namenode started
+      service: name=hadoop-hdfs-namenode state=started
+
+    - name: namenode | ensure secondary namenode started
+      service: name=hadoop-hdfs-secondarynamenode state=started
+
+    - name: file | test if directories already been created
+      sudo_user: hdfs
+      shell: hadoop fs -ls -R /tmp
+      register: hadoop_files
+      ignore_errors: true
+
+    - name: file | ensure directories created for hadoop process
+      command: /usr/lib/hadoop/libexec/init-hdfs.sh
+      when: hadoop_files|failed
+
+    - name: yarn | ensure resource manager started
+      service: name=hadoop-yarn-resourcemanager state=started
+
+    - name: yarn | ensure node manager started
+      service: name=hadoop-yarn-nodemanager state=started
+
+    - name: yarn | ensure mapreduce history started
+      service: name=hadoop-mapreduce-historyserver state=started
+
+    - name: user | check if mapreduce user exists
+      sudo_user: hdfs
+      shell: hadoop fs -ls -R /user/{{mapreduce_user}}
+      register: mapreduce_user_exist
+      ignore_errors: true
+
+    - name: user | create mapreduce user
+      sudo_user: hdfs
+      shell: hadoop fs -mkdir /user/{{mapreduce_user}} && hadoop fs -chown {{mapreduce_user}} /user/{{mapreduce_user}}
+      when: mapreduce_user_exist|failed
+
+    - include: develop.yml
